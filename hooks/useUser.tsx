@@ -70,24 +70,19 @@ export function MyUserContextProvider(props: Props): React.ReactElement {
             setUserDetails(userDetailsPromise.value.data as UserDetails);
           }
 
-          // ===== ИСПРАВЛЕННАЯ ЧАСТЬ =====
-          if (subscriptionPromise.status === "fulfilled") {
-            setSubscription(subscriptionPromise.value.data as Subscription);
-          } else {
-            // Создаём фейковую подписку с правильными полями
-            const fakeSubscription = {
-              id: 'fake_subscription_123',
-              user_id: user?.id || '',
-              status: 'active',
-              created_at: new Date().toISOString(),
-              prices: null, // Добавил недостающее поле
-              products: null, // Добавил недостающее поле
-              metadata: null, // Добавил недостающее поле
-              // Если нужны ещё поля — они будут взяты из типа Subscription
-            } as Subscription;
-            setSubscription(fakeSubscription);
-          }
-          // ===== КОНЕЦ ИСПРАВЛЕННОЙ ЧАСТИ =====
+          // ===== ВРЕМЕННОЕ РЕШЕНИЕ =====
+          // Просто включаем премиум для всех пользователей
+          // Чтобы не заморачиваться с подписками
+          setSubscription({
+            id: 'fake_premium',
+            user_id: user.id,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            prices: null,
+            products: null,
+            metadata: null
+          } as Subscription);
+          // ===== КОНЕЦ ВРЕМЕННОГО РЕШЕНИЯ =====
 
           setIsLoadingData(false);
         }
