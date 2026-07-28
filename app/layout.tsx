@@ -16,7 +16,7 @@ import "./globals.css";
 const font: NextFont = Figtree({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Spotify Clone",
+  title: "Acitify Clone",
   description: "Listen to music!",
 };
 
