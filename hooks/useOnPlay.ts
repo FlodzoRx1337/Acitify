@@ -16,9 +16,11 @@ function useOnPlay(songs: Song[]): (id: string) => void {
       return authModal.onOpen();
     }
 
-    if (!subscription) {
-      return subscribeModal.onOpen();
-    }
+    // ===== ВРЕМЕННО ОТКЛЮЧАЕМ ПРОВЕРКУ НА ПРЕМИУМ =====
+    // if (!subscription) {
+    //   return subscribeModal.onOpen();
+    // }
+    // ===== КОНЕЦ ВРЕМЕННОГО ОТКЛЮЧЕНИЯ =====
 
     player.setId(id);
     player.setIds(songs.map((song: Song): string => song.id));
