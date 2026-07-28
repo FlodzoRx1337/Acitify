@@ -30,9 +30,11 @@ function Library({ songs }: LibraryProps): React.ReactElement {
       return authModal.onOpen();
     }
 
-    if (!subscription) {
-      return subscribeModal.onOpen();
-    }
+    // ===== ВРЕМЕННО ОТКЛЮЧАЕМ ПРОВЕРКУ НА ПРЕМИУМ =====
+    // if (!subscription) {
+    //   return subscribeModal.onOpen();
+    // }
+    // ===== КОНЕЦ ВРЕМЕННОГО ОТКЛЮЧЕНИЯ =====
 
     return uploadModal.onOpen();
   };
