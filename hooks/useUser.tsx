@@ -70,9 +70,20 @@ export function MyUserContextProvider(props: Props): React.ReactElement {
             setUserDetails(userDetailsPromise.value.data as UserDetails);
           }
 
+          // ===== ИЗМЕНЕНИЯ ТУТ =====
+          // Если подписка есть — используем её, если нет — создаём фейковую
           if (subscriptionPromise.status === "fulfilled") {
             setSubscription(subscriptionPromise.value.data as Subscription);
+          } else {
+            // Фейковая подписка, чтобы сайт думал что ты премиум
+            setSubscription({
+              status: 'active',
+              id: 'fake_subscription_123',
+              user_id: user?.id || '',
+              created_at: new Date().toISOString()
+            } as Subscription);
           }
+          // ===== КОНЕЦ ИЗМЕНЕНИЙ =====
 
           setIsLoadingData(false);
         }
