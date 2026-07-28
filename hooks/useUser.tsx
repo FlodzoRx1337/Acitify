@@ -1,172 +1,245 @@
-'use client';
+import {
+  User,
+  useSessionContext,
+  useUser as useSupaUser,
+} from "@supabase/auth-helpers-react";
+import {
+  PostgrestBuilder,
+  PostgrestSingleResponse,
+} from "@supabase/postgrest-js";
+import { Context, createContext, useContext, useEffect, useState } from "react";
 
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useForm, FieldValues, SubmitHandler } from 'react-hook-form';
-import { toast } from 'react-hot-toast';
-import uniqid from 'uniqid';
+import { Subscription, UserDetails } from "@/types";
 
-import { useUser } from '@/hooks/useUser';
-import { useUploadModal } from '@/hooks/useUploadModal';
-import { Song } from '@/types';
+type UserContextType = {
+  accessToken: string | null;
+  user: User | null;
+  userDetails: UserDetails | null;
+  isLoading: boolean;
+  subscription: Subscription | null;
+};
 
-import Button from './Button';
-import Input from './Input';
-import Modal from './Modal';
+export const UserContext: Context<UserContextType | undefined> = createContext<
+  UserContextType | undefined
+>(undefined);
 
-const UploadModal = () => {
-  const router = useRouter();
-  const { user } = useUser();
-  const supabaseClient = useSupabaseClient();
-  const uploadModal = useUploadModal();
-  const [isLoading, setIsLoading] = useState(false);
+export interface Props {
+  [propName: string]: any;
+}
 
-  const { register, handleSubmit, reset } = useForm<FieldValues>({
-    defaultValues: {
-      author: '',
-      title: '',
-      song: null,
-      image: null,
+export function MyUserContextProvider(props: Props): React.ReactElement {
+  const {
+    session,
+    isLoading: isLoadingUser,
+    supabaseClient: supabase,
+  } = useSessionContext();
+  const user: User | null = useSupaUser();
+  const accessToken: string | null = session?.access_token ?? null;
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+  const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+
+  const getUserDetails: () => PostgrestBuilder<any> =
+    (): PostgrestBuilder<any> => supabase.from("users").select("*").single();
+  const getSubscription: () => PostgrestBuilder<any> =
+    (): PostgrestBuilder<any> =>
+      supabase
+        .from("subscriptions")
+        .select("*, prices(*, products(*))")
+        .in("status", ["trialing", "active"])
+        .single();
+
+  useEffect((): void => {
+    if (user && !isLoadingData && !userDetails && !subscription) {
+      setIsLoadingData(true);
+      Promise.allSettled([getUserDetails(), getSubscription()]).then(
+        (
+          results: [
+            PromiseSettledResult<PostgrestSingleResponse<any>>,
+            PromiseSettledResult<PostgrestSingleResponse<any>>
+          ]
+        ): void => {
+          const userDetailsPromise: PromiseSettledResult<
+            PostgrestSingleResponse<any>
+          > = results[0];
+          const subscriptionPromise: PromiseSettledResult<
+            PostgrestSingleResponse<any>
+          > = results[1];
+
+          if (userDetailsPromise.status === "fulfilled") {
+            setUserDetails(userDetailsPromise.value.data as UserDetails);
+          }
+
+          // ===== ВРЕМЕННОЕ РЕШЕНИЕ =====
+          // Просто включаем премиум для всех пользователей
+          // Чтобы не заморачиваться с подписками
+          if (subscriptionPromise.status === "fulfilled" && subscriptionPromise.value.data) {
+            setSubscription(subscriptionPromise.value.data as Subscription);
+          } else {
+            setSubscription({
+              id: 'fake_premium',
+              user_id: user.id,
+              status: 'active',
+              created_at: new Date().toISOString(),
+              prices: null,
+              products: null,
+              metadata: null
+            } as Subscription);
+          }
+          // ===== КОНЕЦ ВРЕМЕННОГО РЕШЕНИЯ =====
+
+          setIsLoadingData(false);
+        }
+      );
+    } else if (!user && !isLoadingUser && !isLoadingData) {
+      setUserDetails(null);
+      setSubscription(null);
     }
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isLoadingUser]);
 
-  const onChange = (open: boolean) => {
-    if (!open) {
-      reset();
-      uploadModal.onClose();
-    }
-  }
-
-  const onSubmit: SubmitHandler<FieldValues> = async (values) => {
-    try {
-      setIsLoading(true);
-
-      const imageFile = values.image?.[0];
-      const songFile = values.song?.[0];
-
-      if (!imageFile || !songFile || !user) {
-        toast.error('Missing fields');
-        return;
-      }
-
-      const uniqueID = uniqid();
-
-      // Upload song
-      const { 
-        data: songData, 
-        error: songError 
-      } = await supabaseClient
-        .storage
-        .from('songs')
-        .upload(`song-${values.title}-${uniqueID}`, songFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (songError) {
-        setIsLoading(false);
-        return toast.error('Failed song upload');
-      }
-
-      // Upload image
-      const { 
-        data: imageData, 
-        error: imageError 
-      } = await supabaseClient
-        .storage
-        .from('images')
-        .upload(`image-${values.title}-${uniqueID}`, imageFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (imageError) {
-        setIsLoading(false);
-        return toast.error('Failed image upload');
-      }
-
-      // Create record in database
-      const { error: supabaseError } = await supabaseClient
-        .from('songs')
-        .insert({
-          user_id: user.id,
-          title: values.title,
-          author: values.author,
-          image_path: imageData?.path,
-          song_path: songData?.path
-        });
-
-      if (supabaseError) {
-        setIsLoading(false);
-        return toast.error(supabaseError.message);
-      }
-
-      router.refresh();
-      setIsLoading(false);
-      toast.success('Song created!');
-      reset();
-      uploadModal.onClose();
-    } catch (error) {
-      toast.error('Something went wrong');
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const value = {
+    accessToken,
+    user,
+    userDetails,
+    isLoading: isLoadingUser || isLoadingData,
+    subscription,
+  };
 
   return (
-    <Modal
-      title="Add a song"
-      description="Upload an mp3 file"
-      isOpen={uploadModal.isOpen}
-      onChange={onChange}
-    >
-      <form 
-        onSubmit={handleSubmit(onSubmit)} 
-        className="flex flex-col gap-y-4"
-      >
-        <Input
-          id="title"
-          disabled={isLoading}
-          {...register('title', { required: true })}
-          placeholder="Song title"
-        />
-        <Input
-          id="author"
-          disabled={isLoading}
-          {...register('author', { required: true })}
-          placeholder="Song author"
-        />
-        <div>
-          <div className="pb-1">
-            Select a song file
-          </div>
-          <Input
-            id="song"
-            type="file"
-            disabled={isLoading}
-            accept=".mp3"
-            {...register('song', { required: true })}
-          />
-        </div>
-        <div>
-          <div className="pb-1">
-            Select an image
-          </div>
-          <Input
-            id="image"
-            type="file"
-            disabled={isLoading}
-            accept="image/*"
-            {...register('image', { required: true })}
-          />
-        </div>
-        <Button disabled={isLoading} type="submit">
-          Create
-        </Button>
-      </form>
-    </Modal>
+    <UserContext.Provider
+      value={value}
+      {...props}
+    />
   );
 }
 
-export default UploadModal;
+export function useUser(): UserContextType {
+  const context: UserContextType | undefined = useContext(UserContext);
+  if (context === undefined) {
+    throw new Error(`useUser must be used within a MyUserContextProvider.`);
+  }
+  return context;
+}import {
+  User,
+  useSessionContext,
+  useUser as useSupaUser,
+} from "@supabase/auth-helpers-react";
+import {
+  PostgrestBuilder,
+  PostgrestSingleResponse,
+} from "@supabase/postgrest-js";
+import { Context, createContext, useContext, useEffect, useState } from "react";
+
+import { Subscription, UserDetails } from "@/types";
+
+type UserContextType = {
+  accessToken: string | null;
+  user: User | null;
+  userDetails: UserDetails | null;
+  isLoading: boolean;
+  subscription: Subscription | null;
+};
+
+export const UserContext: Context<UserContextType | undefined> = createContext<
+  UserContextType | undefined
+>(undefined);
+
+export interface Props {
+  [propName: string]: any;
+}
+
+export function MyUserContextProvider(props: Props): React.ReactElement {
+  const {
+    session,
+    isLoading: isLoadingUser,
+    supabaseClient: supabase,
+  } = useSessionContext();
+  const user: User | null = useSupaUser();
+  const accessToken: string | null = session?.access_token ?? null;
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+  const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+
+  const getUserDetails: () => PostgrestBuilder<any> =
+    (): PostgrestBuilder<any> => supabase.from("users").select("*").single();
+  const getSubscription: () => PostgrestBuilder<any> =
+    (): PostgrestBuilder<any> =>
+      supabase
+        .from("subscriptions")
+        .select("*, prices(*, products(*))")
+        .in("status", ["trialing", "active"])
+        .single();
+
+  useEffect((): void => {
+    if (user && !isLoadingData && !userDetails && !subscription) {
+      setIsLoadingData(true);
+      Promise.allSettled([getUserDetails(), getSubscription()]).then(
+        (
+          results: [
+            PromiseSettledResult<PostgrestSingleResponse<any>>,
+            PromiseSettledResult<PostgrestSingleResponse<any>>
+          ]
+        ): void => {
+          const userDetailsPromise: PromiseSettledResult<
+            PostgrestSingleResponse<any>
+          > = results[0];
+          const subscriptionPromise: PromiseSettledResult<
+            PostgrestSingleResponse<any>
+          > = results[1];
+
+          if (userDetailsPromise.status === "fulfilled") {
+            setUserDetails(userDetailsPromise.value.data as UserDetails);
+          }
+
+          // ===== ВРЕМЕННОЕ РЕШЕНИЕ =====
+          // Просто включаем премиум для всех пользователей
+          // Чтобы не заморачиваться с подписками
+          if (subscriptionPromise.status === "fulfilled" && subscriptionPromise.value.data) {
+            setSubscription(subscriptionPromise.value.data as Subscription);
+          } else {
+            setSubscription({
+              id: 'fake_premium',
+              user_id: user.id,
+              status: 'active',
+              created_at: new Date().toISOString(),
+              prices: null,
+              products: null,
+              metadata: null
+            } as Subscription);
+          }
+          // ===== КОНЕЦ ВРЕМЕННОГО РЕШЕНИЯ =====
+
+          setIsLoadingData(false);
+        }
+      );
+    } else if (!user && !isLoadingUser && !isLoadingData) {
+      setUserDetails(null);
+      setSubscription(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isLoadingUser]);
+
+  const value = {
+    accessToken,
+    user,
+    userDetails,
+    isLoading: isLoadingUser || isLoadingData,
+    subscription,
+  };
+
+  return (
+    <UserContext.Provider
+      value={value}
+      {...props}
+    />
+  );
+}
+
+export function useUser(): UserContextType {
+  const context: UserContextType | undefined = useContext(UserContext);
+  if (context === undefined) {
+    throw new Error(`useUser must be used within a MyUserContextProvider.`);
+  }
+  return context;
+}
